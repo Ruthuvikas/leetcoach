@@ -38,16 +38,28 @@ class ClarificationAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def respond(self, user_input):
+    def respond(self, user_input, question):
+        q_title = question.get("title", "")
+        q_desc = question.get("description", "")
+        q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
+        q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are a helpful assistant for clarifying coding questions. Given the user's input, provide a detailed clarification or ask for more information if needed. Be specific and constructive.
+You are an interviewer for a coding interview. Given the user's input and the coding question, provide feedback as an interviewer: do NOT give out the answer, but nudge the user in the right direction with hints, questions, or suggestions. Be specific, constructive, and encourage deeper thinking.
+
+Question:
+Title: {q_title}
+Description: {q_desc}
+Examples:
+{q_examples}
+Constraints:
+{q_constraints}
 
 User input:
 {user_input}
 """
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful assistant for clarifying coding questions."},
+            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions."},
                       {"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.3
@@ -59,16 +71,28 @@ class BruteForceAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def feedback(self, user_idea):
+    def feedback(self, user_idea, question):
+        q_title = question.get("title", "")
+        q_desc = question.get("description", "")
+        q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
+        q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are a coding assistant. Given the user's brute-force idea for solving a problem, provide a detailed review. Include strengths, weaknesses, and suggestions for improvement. Be specific and constructive.
+You are an interviewer for a coding interview. Given the user's brute-force idea for solving the following coding question, provide feedback as an interviewer: do NOT give out the answer, but nudge the user in the right direction with hints, questions, or suggestions. Be specific, constructive, and encourage deeper thinking.
+
+Question:
+Title: {q_title}
+Description: {q_desc}
+Examples:
+{q_examples}
+Constraints:
+{q_constraints}
 
 Brute-force idea:
 {user_idea}
 """
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful coding assistant for reviewing brute-force ideas."},
+            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions."},
                       {"role": "user", "content": prompt}],
             max_tokens=250,
             temperature=0.3
@@ -80,16 +104,28 @@ class OptimizeAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def feedback(self, user_idea):
+    def feedback(self, user_idea, question):
+        q_title = question.get("title", "")
+        q_desc = question.get("description", "")
+        q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
+        q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are a coding assistant. Given the user's optimized idea for solving a problem, provide a detailed review. Include strengths, weaknesses, and suggestions for further optimization. Be specific and constructive.
+You are an interviewer for a coding interview. Given the user's optimized idea for solving the following coding question, provide feedback as an interviewer: do NOT give out the answer, but nudge the user in the right direction with hints, questions, or suggestions. Be specific, constructive, and encourage deeper thinking.
+
+Question:
+Title: {q_title}
+Description: {q_desc}
+Examples:
+{q_examples}
+Constraints:
+{q_constraints}
 
 Optimized idea:
 {user_idea}
 """
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful coding assistant for reviewing optimized ideas."},
+            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions."},
                       {"role": "user", "content": prompt}],
             max_tokens=250,
             temperature=0.3
@@ -122,11 +158,14 @@ For each stage, provide a grade (1-10) and detailed feedback, including key poin
 2. Brute-force Idea: How well did the user propose and analyze a brute-force solution?
 3. Coding Solution: How correct, efficient, and clear is the final code?
 
+After grading each stage, also provide a total score out of 10 for the user's overall performance (not an average, but your holistic judgment).
+
 Return a JSON object with this structure:
 {{
   "clarification": {{"grade": int, "feedback": str}},
   "brute_force": {{"grade": int, "feedback": str}},
   "coding": {{"grade": int, "feedback": str}},
+  "total": int,  // total score out of 10
   "key_pointers": str
 }}
 
@@ -143,7 +182,7 @@ User's code solution:
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": "You are a senior coding interview coach."},
                       {"role": "user", "content": prompt}],
-            max_tokens=500,
+            max_tokens=600,
             temperature=0.3
         )
         import re, json as pyjson
@@ -155,7 +194,7 @@ User's code solution:
                 return pyjson.loads(match.group(0))
             except Exception:
                 pass
-        return {"clarification": {}, "brute_force": {}, "coding": {}, "key_pointers": content}
+        return {"clarification": {}, "brute_force": {}, "coding": {}, "total": None, "key_pointers": content}
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -198,19 +237,22 @@ async def start_session(request: Request):
 @app.post("/api/clarify")
 async def clarify(request: Request):
     data = await request.json()
-    response = ClarificationAgent().respond(data.get("user_input", ""))
+    question = QUESTIONS[0]
+    response = ClarificationAgent().respond(data.get("user_input", ""), question)
     return {"agent": "ClarificationAgent", "response": response}
 
 @app.post("/api/brute-force")
 async def brute_force(request: Request):
     data = await request.json()
-    response = BruteForceAgent().feedback(data.get("user_idea", ""))
+    question = QUESTIONS[0]
+    response = BruteForceAgent().feedback(data.get("user_idea", ""), question)
     return {"agent": "BruteForceAgent", "response": response}
 
 @app.post("/api/optimize")
 async def optimize(request: Request):
     data = await request.json()
-    response = OptimizeAgent().feedback(data.get("user_idea", ""))
+    question = QUESTIONS[0]
+    response = OptimizeAgent().feedback(data.get("user_idea", ""), question)
     return {"agent": "OptimizeAgent", "response": response}
 
 @app.post("/api/code-review")
