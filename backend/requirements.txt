@@ -1,4 +1,8 @@
 fastapi
 uvicorn
+sqlalchemy
+passlib[bcrypt]
+python-jose
+openai
 langgraph
 openai==0.28 
