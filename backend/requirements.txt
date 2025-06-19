@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+langgraph
+openai==0.28 
