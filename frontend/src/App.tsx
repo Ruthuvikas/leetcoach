@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import LoginModal from './LoginModal';
 import SignupModal from './SignupModal';
 import MonacoEditor from '@monaco-editor/react';
@@ -12,33 +12,44 @@ interface Question {
 }
 
 const steps = [
-  'question',
-  'clarify',
-  'bruteForce',
-  'optimize',
-  'code',
-  'review',
+  'Question',
+  'Clarify',
+  'Brute Force',
+  'Optimize',
+  'Code',
+  'Review',
+];
+
+const languages = [
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'python', label: 'Python' },
+  { value: 'java', label: 'Java' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'go', label: 'Go' },
 ];
 
 function App() {
-  const [step, setStep] = useState(0);
+  const [activeTab, setActiveTab] = useState('Question');
   const [question, setQuestion] = useState<Question | null>(null);
   const [questions, setQuestions] = useState<{ id: number; title: string }[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
   const [clarifyInput, setClarifyInput] = useState('');
   const [clarifyResponse, setClarifyResponse] = useState('');
+  const [showClarifyFeedback, setShowClarifyFeedback] = useState(false);
   const [bruteForceInput, setBruteForceInput] = useState('');
   const [bruteForceResponse, setBruteForceResponse] = useState('');
+  const [showBruteForceFeedback, setShowBruteForceFeedback] = useState(false);
   const [optimizeInput, setOptimizeInput] = useState('');
   const [optimizeResponse, setOptimizeResponse] = useState('');
+  const [showOptimizeFeedback, setShowOptimizeFeedback] = useState(false);
   const [codeInput, setCodeInput] = useState('');
+  const [language, setLanguage] = useState('javascript');
   const [review, setReview] = useState<any>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
   const [codeReviewError, setCodeReviewError] = useState('');
   const [darkMode, setDarkMode] = useState(() => {
-    // Default to system preference
     if (typeof window !== 'undefined') {
       return localStorage.getItem('darkMode') === 'true' || window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
@@ -47,27 +58,22 @@ function App() {
   const [clarifyLoading, setClarifyLoading] = useState(false);
   const [bruteForceLoading, setBruteForceLoading] = useState(false);
   const [optimizeLoading, setOptimizeLoading] = useState(false);
-  const clarifyTimeout = useRef<NodeJS.Timeout | null>(null);
-  const bruteForceTimeout = useRef<NodeJS.Timeout | null>(null);
-  const optimizeTimeout = useRef<NodeJS.Timeout | null>(null);
   const [bruteForceTime, setBruteForceTime] = useState('');
   const [bruteForceSpace, setBruteForceSpace] = useState('');
   const [optimizeTime, setOptimizeTime] = useState('');
   const [optimizeSpace, setOptimizeSpace] = useState('');
-  const [timer, setTimer] = useState(45 * 60); // 45 minutes in seconds
+  const [timer, setTimer] = useState(45 * 60);
   const [timerActive, setTimerActive] = useState(false);
   const [timeout, setTimeoutReached] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const nextStep = () => setStep((s) => s + 1);
-
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('/api/questions')
       .then(res => res.json())
       .then(data => setQuestions(data));
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedQuestionId !== null) {
       fetch('/api/start-session', {
         method: 'POST',
@@ -75,11 +81,28 @@ function App() {
         body: JSON.stringify({ question_id: selectedQuestionId })
       })
         .then((res) => res.json())
-        .then((data) => setQuestion(data.question));
+        .then((data) => {
+          setQuestion(data.question);
+        });
     }
   }, [selectedQuestionId]);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (question && language) {
+      setCodeInput('// Loading function definition...');
+      fetch('/api/function-definition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: question.id, language: language })
+      })
+      .then(res => res.json())
+      .then(data => {
+        setCodeInput(data.function_definition);
+      });
+    }
+  }, [question, language]);
+
+  useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('darkMode', 'true');
@@ -89,74 +112,8 @@ function App() {
     }
   }, [darkMode]);
 
-  // Live feedback for clarify
-  React.useEffect(() => {
-    if (step !== 1) return;
-    if (clarifyTimeout.current) clearTimeout(clarifyTimeout.current);
-    if (!clarifyInput.trim()) {
-      setClarifyResponse('');
-      return;
-    }
-    setClarifyLoading(true);
-    clarifyTimeout.current = setTimeout(() => {
-      fetch('/api/clarify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_input: clarifyInput, question_id: selectedQuestionId }),
-      })
-        .then(res => res.json())
-        .then(data => setClarifyResponse(data.response))
-        .finally(() => setClarifyLoading(false));
-    }, 600);
-    // eslint-disable-next-line
-  }, [clarifyInput, step, selectedQuestionId]);
-
-  // Live feedback for brute-force
-  React.useEffect(() => {
-    if (step !== 2) return;
-    if (bruteForceTimeout.current) clearTimeout(bruteForceTimeout.current);
-    if (!bruteForceInput.trim() && !bruteForceTime.trim() && !bruteForceSpace.trim()) {
-      setBruteForceResponse('');
-      return;
-    }
-    setBruteForceLoading(true);
-    bruteForceTimeout.current = setTimeout(() => {
-      fetch('/api/brute-force', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_idea: bruteForceInput, time_complexity: bruteForceTime, space_complexity: bruteForceSpace, question_id: selectedQuestionId }),
-      })
-        .then(res => res.json())
-        .then(data => setBruteForceResponse(data.response))
-        .finally(() => setBruteForceLoading(false));
-    }, 600);
-    // eslint-disable-next-line
-  }, [bruteForceInput, bruteForceTime, bruteForceSpace, step, selectedQuestionId]);
-
-  // Live feedback for optimize
-  React.useEffect(() => {
-    if (step !== 3) return;
-    if (optimizeTimeout.current) clearTimeout(optimizeTimeout.current);
-    if (!optimizeInput.trim() && !optimizeTime.trim() && !optimizeSpace.trim()) {
-      setOptimizeResponse('');
-      return;
-    }
-    setOptimizeLoading(true);
-    optimizeTimeout.current = setTimeout(() => {
-      fetch('/api/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_idea: optimizeInput, time_complexity: optimizeTime, space_complexity: optimizeSpace, question_id: selectedQuestionId }),
-      })
-        .then(res => res.json())
-        .then(data => setOptimizeResponse(data.response))
-        .finally(() => setOptimizeLoading(false));
-    }, 600);
-    // eslint-disable-next-line
-  }, [optimizeInput, optimizeTime, optimizeSpace, step, selectedQuestionId]);
-
   // Timer effect
-  React.useEffect(() => {
+  useEffect(() => {
     if (!timerActive || timeout) return;
     if (timer <= 0) {
       setTimeoutReached(true);
@@ -167,16 +124,7 @@ function App() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [timer, timerActive, timeout]);
 
-  // Reset timer on restart
-  React.useEffect(() => {
-    if (step === 0) {
-      setTimer(45 * 60);
-      setTimerActive(false);
-      setTimeoutReached(false);
-    }
-  }, [step]);
 
-  // Format timer
   const formatTimer = (t: number) => {
     const m = Math.floor(t / 60).toString().padStart(2, '0');
     const s = (t % 60).toString().padStart(2, '0');
@@ -184,11 +132,13 @@ function App() {
   };
 
   const handleStartInterview = () => {
-    setStep(1);
+    setActiveTab('Clarify');
     setTimerActive(true);
   };
 
-  const handleClarify = async () => {
+  const handleGetClarifyFeedback = async () => {
+    setClarifyLoading(true);
+    setShowClarifyFeedback(false);
     const res = await fetch('/api/clarify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -196,10 +146,13 @@ function App() {
     });
     const data = await res.json();
     setClarifyResponse(data.response);
-    nextStep();
+    setClarifyLoading(false);
+    setShowClarifyFeedback(true);
   };
 
-  const handleBruteForce = async () => {
+  const handleGetBruteForceFeedback = async () => {
+    setBruteForceLoading(true);
+    setShowBruteForceFeedback(false);
     const res = await fetch('/api/brute-force', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -207,10 +160,13 @@ function App() {
     });
     const data = await res.json();
     setBruteForceResponse(data.response);
-    nextStep();
+    setBruteForceLoading(false);
+    setShowBruteForceFeedback(true);
   };
 
-  const handleOptimize = async () => {
+  const handleGetOptimizeFeedback = async () => {
+    setOptimizeLoading(true);
+    setShowOptimizeFeedback(false);
     const res = await fetch('/api/optimize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -218,37 +174,43 @@ function App() {
     });
     const data = await res.json();
     setOptimizeResponse(data.response);
-    nextStep();
+    setOptimizeLoading(false);
+    setShowOptimizeFeedback(true);
   };
 
   const handleCodeReview = async () => {
-    if (!clarifyInput.trim() && !bruteForceInput.trim() && !codeInput.trim()) {
-      setCodeReviewError('Please provide at least one answer before submitting for review.');
-      return;
+    if (window.confirm('Are you sure you want to submit for final review?')) {
+      if (!clarifyInput.trim() && !bruteForceInput.trim() && !codeInput.trim()) {
+        setCodeReviewError('Please provide at least one answer before submitting for review.');
+        return;
+      }
+      setCodeReviewError('');
+      const res = await fetch('/api/code-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clarification: clarifyInput,
+          brute_force: bruteForceInput,
+          code: codeInput,
+          language: language,
+          brute_force_time_complexity: bruteForceTime,
+          brute_force_space_complexity: bruteForceSpace,
+          optimize_time_complexity: optimizeTime,
+          optimize_space_complexity: optimizeSpace,
+          question_id: selectedQuestionId
+        }),
+      });
+      const data = await res.json();
+      setReview(data.review);
+      setActiveTab('Review');
+      setTimerActive(false);
     }
-    setCodeReviewError('');
-    const res = await fetch('/api/code-review', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clarification: clarifyInput,
-        brute_force: bruteForceInput,
-        code: codeInput,
-        brute_force_time_complexity: bruteForceTime,
-        brute_force_space_complexity: bruteForceSpace,
-        optimize_time_complexity: optimizeTime,
-        optimize_space_complexity: optimizeSpace,
-        question_id: selectedQuestionId
-      }),
-    });
-    const data = await res.json();
-    setReview(data.review);
-    nextStep();
   };
 
   const handleLoginSuccess = (token: string) => {
     localStorage.setItem('token', token);
     setIsLoggedIn(true);
+    setShowLogin(false);
   };
 
   const handleLogout = () => {
@@ -257,251 +219,303 @@ function App() {
   };
 
   const handleRestart = () => {
-    setStep(0);
+    setActiveTab('Question');
+    setQuestion(null);
+    setSelectedQuestionId(null);
     setClarifyInput('');
     setClarifyResponse('');
+    setShowClarifyFeedback(false);
     setBruteForceInput('');
     setBruteForceResponse('');
+    setShowBruteForceFeedback(false);
     setOptimizeInput('');
     setOptimizeResponse('');
+    setShowOptimizeFeedback(false);
     setCodeInput('');
     setReview(null);
-    setSelectedQuestionId(null);
-    setQuestion(null);
+    setCodeReviewError('');
+    setTimer(45 * 60);
+    setTimerActive(false);
+    setTimeoutReached(false);
   };
 
   return (
-    <div className={"min-h-screen flex flex-col items-center " + (darkMode ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-blue-50 to-purple-100') + " dark:bg-gradient-to-br dark:from-gray-900 dark:to-gray-800"}>
-      <header className={"w-full py-8 shadow-md mb-8 relative " + (darkMode ? 'bg-gradient-to-r from-gray-900 to-gray-800' : 'bg-gradient-to-r from-blue-600 to-purple-600') + " dark:bg-gradient-to-r dark:from-gray-900 dark:to-gray-800"}>
-        <h1 className="text-4xl font-extrabold text-white text-center tracking-tight drop-shadow-lg">Leet Coach</h1>
-        <p className="text-center text-white text-lg mt-2 font-light">Your AI-powered coding interview simulator</p>
-        <div className="absolute top-4 right-8 flex items-center space-x-2">
-          <button
-            className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 mr-2"
-            onClick={() => setDarkMode(dm => !dm)}
-            aria-label="Toggle dark mode"
-          >
-            {darkMode ? '🌙' : '☀️'}
+    <div className={`min-h-screen ${darkMode ? 'dark' : ''} bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100`}>
+      <header className="p-4 flex justify-between items-center bg-white dark:bg-gray-800 shadow-md">
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">LeetCoach</h1>
+        <div className="flex items-center">
+          <button onClick={() => setDarkMode(!darkMode)} className="mr-4 p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            {darkMode ? '☀️' : '🌙'}
           </button>
-          {!isLoggedIn ? (
-            <>
-              <button
-                className="mr-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                onClick={() => setShowLogin(true)}
-              >
-                Login
-              </button>
-              <button
-                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                onClick={() => setShowSignup(true)}
-              >
-                Sign Up
-              </button>
-            </>
+          {isLoggedIn ? (
+            <button onClick={handleLogout} className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600">Logout</button>
           ) : (
-            <button
-              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-              onClick={handleLogout}
-            >
-              Logout
-            </button>
+            <>
+              <button onClick={() => setShowLogin(true)} className="mr-2 bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-600">Login</button>
+              <button onClick={() => setShowSignup(true)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Sign Up</button>
+            </>
           )}
         </div>
       </header>
-      {/* Timer below header, above main content, with Exit button next to it */}
-      {step > 0 && step < 5 && timerActive && !timeout && (
-        <div className="w-full flex justify-center mb-4 items-center gap-4">
-          <div className="bg-gray-900 text-white dark:bg-gray-800 dark:text-gray-100 px-6 py-2 rounded-full shadow text-lg font-mono border-2 border-purple-400">
-            Time Left: {formatTimer(timer)}
+
+      <main className="p-8">
+        {question === null ? (
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold mb-4">Select a Question</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {questions.map(q => (
+                <div key={q.id} onClick={() => setSelectedQuestionId(q.id)} className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md cursor-pointer hover:shadow-xl transition-shadow">
+                  <h3 className="text-xl font-bold">{q.title}</h3>
+                </div>
+              ))}
+            </div>
           </div>
-          <button
-            className="px-5 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded-full shadow border border-yellow-600 transition-all"
-            onClick={handleRestart}
-            aria-label="Exit to question selection"
-          >
-            Exit
-          </button>
-        </div>
-      )}
-      {timeout && (
-        <div className="w-full flex justify-center mb-4">
-          <div className="bg-red-700 text-white px-6 py-2 rounded-full shadow text-lg font-bold border-2 border-red-400">Time's up! Please restart to try again.</div>
-        </div>
-      )}
-      {isLoggedIn ? (
-        <div className={"w-full max-w-2xl rounded-2xl shadow-xl p-8 mb-8 relative flex flex-col min-h-[700px] " + (darkMode ? 'bg-gray-900 text-gray-100' : 'bg-white') + " dark:bg-gray-900 dark:text-gray-100"}>
-          <nav className="flex justify-between mb-6">
-            {steps.map((s, i) => (
-              <div
-                key={s}
-                className={`flex-1 text-center text-xs font-semibold py-2 rounded-full mx-1 transition-all duration-200 cursor-pointer ${step === i ? (darkMode ? 'bg-purple-900 text-white shadow-lg scale-105' : 'bg-purple-600 text-white shadow-lg scale-105') : i <= step ? (darkMode ? 'bg-gray-800 text-gray-300 hover:bg-purple-900' : 'bg-gray-100 text-gray-500 hover:bg-purple-200') : (darkMode ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-300 cursor-not-allowed')}`}
-                onClick={() => { if (i <= step) setStep(i); }}
-              >{
-                s === 'question' ? 'Question' :
-                s === 'clarify' ? 'Clarify' :
-                s === 'bruteForce' ? 'Brute Force' :
-                s === 'optimize' ? 'Optimize' :
-                s === 'code' ? 'Code' :
-                s === 'review' ? 'Review' : s
-              }</div>
-            ))}
-          </nav>
-          {step === 0 && (
-            <div>
-              <h2 className="text-2xl font-bold mb-2 text-purple-700 dark:text-purple-300">Choose a Question</h2>
-              <div className="mb-4">
-                <select
-                  className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700"
-                  value={selectedQuestionId ?? ''}
-                  onChange={e => setSelectedQuestionId(Number(e.target.value))}
+        ) : (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-3xl font-bold">{question.title}</h2>
+              <div className={`text-2xl font-mono p-2 rounded-lg ${timeout ? 'text-red-500' : ''}`}>
+                {formatTimer(timer)}
+              </div>
+            </div>
+
+            <div className="flex border-b border-gray-300 dark:border-gray-700 mb-4">
+              {steps.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setActiveTab(s)}
+                  className={`px-4 py-2 -mb-px border-b-2 ${activeTab === s ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent hover:text-gray-600 dark:hover:text-gray-300'}`}
                 >
-                  <option value="" disabled>Select a question...</option>
-                  {questions.map(q => (
-                    <option key={q.id} value={q.id}>{q.title}</option>
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'Question' && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <p className="whitespace-pre-wrap mb-4">{question.description}</p>
+                <div className="mb-4">
+                  <h4 className="font-semibold text-lg mb-2">Examples:</h4>
+                  {question.examples.map((ex, i) => (
+                    <div key={i} className="bg-gray-100 dark:bg-gray-700 p-3 rounded-md mb-2">
+                      <p><strong>Input:</strong> {ex.input}</p>
+                      <p><strong>Output:</strong> {ex.output}</p>
+                    </div>
                   ))}
-                </select>
+                </div>
+                <div className="mt-6 text-center">
+                  <button onClick={handleStartInterview} className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Start Interview</button>
+                </div>
               </div>
-              {question && selectedQuestionId && (
-                <>
-                  <p className="mb-4 text-gray-700 dark:text-gray-100 text-lg">{question.description}</p>
-                  <div className="mb-4">
-                    <span className="block text-md text-blue-700 dark:text-blue-300 font-semibold mb-2">You will have 45 minutes to complete the interview once you start.</span>
-                  </div>
-                  <div className="mb-4">
-                    <strong className="text-gray-800 dark:text-gray-200">Examples:</strong>
-                    {question.examples.map((ex, i) => (
-                      <div key={i} className="ml-4 text-sm text-gray-600 dark:text-gray-300">Input: {ex.input} <span className="text-gray-400 dark:text-gray-400">→</span> Output: {ex.output}</div>
-                    ))}
-                  </div>
-                  <div className="mb-4">
-                    <strong className="text-gray-800 dark:text-gray-200">Constraints:</strong>
-                    <ul className="list-disc ml-6 text-sm text-gray-600 dark:text-gray-300">
-                      {question.constraints.map((c, i) => (
-                        <li key={i}>{c}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleStartInterview} disabled={!selectedQuestionId}>Start Interview</button>
-                </>
-              )}
-            </div>
-          )}
-          {step === 1 && (
-            <div>
-              <h2 className="font-semibold text-lg text-purple-700 mb-2">Step 1: Ask clarifying questions</h2>
-              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={clarifyInput} onChange={e => setClarifyInput(e.target.value)} placeholder="Ask about input, constraints, etc." disabled={timeout} />
-              {clarifyLoading && <div className="text-xs text-gray-400">Loading feedback...</div>}
-              {clarifyResponse && <div className="mt-4 p-3 bg-purple-50 dark:bg-gray-800 border-l-4 border-purple-400 text-purple-900 dark:text-purple-200 rounded">Interviewer: {clarifyResponse}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleClarify} disabled={timeout}>Next</button>
-            </div>
-          )}
-          {step === 2 && (
-            <div>
-              <h2 className="font-semibold text-lg text-purple-700 mb-2">Step 2: Explain brute-force solution</h2>
-              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceInput} onChange={e => setBruteForceInput(e.target.value)} placeholder="Describe your brute-force approach..." disabled={timeout} />
-              <div className="flex gap-4 mb-2">
-                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceTime} onChange={e => setBruteForceTime(e.target.value)} placeholder="Time Complexity (e.g. O(n^2))" disabled={timeout} />
-                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceSpace} onChange={e => setBruteForceSpace(e.target.value)} placeholder="Space Complexity (e.g. O(n))" disabled={timeout} />
-              </div>
-              {bruteForceLoading && <div className="text-xs text-gray-400">Loading feedback...</div>}
-              {bruteForceResponse && <div className="mt-4 p-3 bg-purple-50 dark:bg-gray-800 border-l-4 border-purple-400 text-purple-900 dark:text-purple-200 rounded">Interviewer: {bruteForceResponse}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleBruteForce} disabled={timeout}>Next</button>
-            </div>
-          )}
-          {step === 3 && (
-            <div>
-              <h2 className="font-semibold text-lg text-purple-700 mb-2">Step 3: Explain optimized solution</h2>
-              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeInput} onChange={e => setOptimizeInput(e.target.value)} placeholder="Describe your optimized approach..." disabled={timeout} />
-              <div className="flex gap-4 mb-2">
-                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeTime} onChange={e => setOptimizeTime(e.target.value)} placeholder="Time Complexity (e.g. O(n log n))" disabled={timeout} />
-                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeSpace} onChange={e => setOptimizeSpace(e.target.value)} placeholder="Space Complexity (e.g. O(1))" disabled={timeout} />
-              </div>
-              {optimizeLoading && <div className="text-xs text-gray-400">Loading feedback...</div>}
-              {optimizeResponse && <div className="mt-4 p-3 bg-purple-50 dark:bg-gray-800 border-l-4 border-purple-400 text-purple-900 dark:text-purple-200 rounded">Interviewer: {optimizeResponse}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleOptimize} disabled={timeout}>Next</button>
-            </div>
-          )}
-          {step === 4 && (
-            <div>
-              <h2 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-2">Step 4: Write your code</h2>
-              <div className="mb-2">
-                <MonacoEditor
-                  height="300px"
-                  language="python"
-                  theme={darkMode ? 'vs-dark' : 'vs-light'}
-                  value={codeInput}
-                  onChange={(value: string | undefined) => setCodeInput(value || '')}
-                  options={{ fontSize: 14, minimap: { enabled: false }, readOnly: timeout }}
+            )}
+
+            {activeTab === 'Clarify' && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-2xl font-bold mb-4">Clarifying Questions</h3>
+                <p className="mb-4">Ask any questions you have to clarify the problem statement, constraints, or examples.</p>
+                <textarea
+                  value={clarifyInput}
+                  onChange={(e) => setClarifyInput(e.target.value)}
+                  placeholder="e.g., What should I return if there's no solution? Are the numbers in the input array unique?"
+                  className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  rows={5}
                 />
-              </div>
-              {codeReviewError && <div className="text-red-500 text-sm mb-2">{codeReviewError}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleCodeReview} disabled={timeout || (!clarifyInput.trim() && !bruteForceInput.trim() && !codeInput.trim())}>Submit for Review</button>
-            </div>
-          )}
-          {step === 5 && review && (
-            <div>
-              <h2 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-4">Step 5: Code Review</h2>
-              <div className="p-4 bg-purple-50 dark:bg-gray-800 border-2 border-purple-200 dark:border-purple-700 rounded-xl mb-4 shadow">
-                {typeof review.total === 'number' && (
-                  <div className="mb-4 text-xl font-bold text-purple-800 dark:text-purple-200">
-                    Total Score: <span className="font-mono">{review.total}/10</span>
-                    <div className="text-sm text-gray-600 dark:text-gray-300 font-normal mt-1">This is your overall performance score for the interview, based on all stages.</div>
+                <div className="mt-4 text-center">
+                  <button onClick={handleGetClarifyFeedback} disabled={clarifyLoading} className="bg-indigo-500 text-white px-6 py-2 rounded-md hover:bg-indigo-600 disabled:bg-gray-400">
+                    {clarifyLoading ? 'Getting Feedback...' : 'Get Interviewer Feedback'}
+                  </button>
+                </div>
+                {showClarifyFeedback && (
+                  <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-md">
+                    <h4 className="font-semibold text-lg mb-2">Interviewer Feedback:</h4>
+                    <p className="whitespace-pre-wrap">{clarifyResponse}</p>
                   </div>
                 )}
-                <div className="mb-4">
-                  <strong className="text-purple-700 dark:text-purple-300">Input Clarification:</strong> <span className="font-mono">{review.clarification?.grade}/10</span>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">How well you clarified the problem and requirements.</div>
-                  <span className="text-sm text-gray-700 dark:text-gray-100">{review.clarification?.feedback}</span>
+              </div>
+            )}
+
+            {activeTab === 'Brute Force' && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-2xl font-bold mb-4">Brute-force Solution</h3>
+                <p className="mb-4">Describe your initial, straightforward approach to solving the problem. Don't worry about efficiency yet.</p>
+                <textarea
+                  value={bruteForceInput}
+                  onChange={(e) => setBruteForceInput(e.target.value)}
+                  placeholder="Describe your brute-force idea here. e.g., I'll use nested loops to check every pair of numbers..."
+                  className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  rows={5}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <input
+                    type="text"
+                    value={bruteForceTime}
+                    onChange={(e) => setBruteForceTime(e.target.value)}
+                    placeholder="Time Complexity (e.g., O(n^2))"
+                    className="p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <input
+                    type="text"
+                    value={bruteForceSpace}
+                    onChange={(e) => setBruteForceSpace(e.target.value)}
+                    placeholder="Space Complexity (e.g., O(1))"
+                    className="p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  />
                 </div>
-                <div className="mb-4">
-                  <strong className="text-purple-700 dark:text-purple-300">Brute-force Idea:</strong> <span className="font-mono">{review.brute_force?.grade}/10</span>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">How well you proposed and analyzed a brute-force solution.</div>
-                  <span className="text-sm text-gray-700 dark:text-gray-100">{review.brute_force?.feedback}</span>
+                <div className="mt-4 text-center">
+                  <button onClick={handleGetBruteForceFeedback} disabled={bruteForceLoading} className="bg-indigo-500 text-white px-6 py-2 rounded-md hover:bg-indigo-600 disabled:bg-gray-400">
+                    {bruteForceLoading ? 'Getting Feedback...' : 'Get Interviewer Feedback'}
+                  </button>
                 </div>
-                <div className="mb-4">
-                  <strong className="text-purple-700 dark:text-purple-300">Coding Solution:</strong> <span className="font-mono">{review.coding?.grade}/10</span>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">How correct, efficient, and clear your final code was.</div>
-                  <span className="text-sm text-gray-700 dark:text-gray-100">{review.coding?.feedback}</span>
+                {showBruteForceFeedback && (
+                  <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-md">
+                    <h4 className="font-semibold text-lg mb-2">Interviewer Feedback:</h4>
+                    <p className="whitespace-pre-wrap">{bruteForceResponse}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'Optimize' && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-2xl font-bold mb-4">Optimized Solution</h3>
+                <p className="mb-4">Now, describe a more efficient approach. How can you improve the time or space complexity?</p>
+                <textarea
+                  value={optimizeInput}
+                  onChange={(e) => setOptimizeInput(e.target.value)}
+                  placeholder="Describe your optimized idea here. e.g., I can use a hash map to store numbers I've seen..."
+                  className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  rows={5}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <input
+                    type="text"
+                    value={optimizeTime}
+                    onChange={(e) => setOptimizeTime(e.target.value)}
+                    placeholder="Time Complexity (e.g., O(n))"
+                    className="p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <input
+                    type="text"
+                    value={optimizeSpace}
+                    onChange={(e) => setOptimizeSpace(e.target.value)}
+                    placeholder="Space Complexity (e.g., O(n))"
+                    className="p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  />
                 </div>
-                <div className="mb-2">
-                  <strong className="text-purple-700 dark:text-purple-300">Key Pointers:</strong> <span className="text-sm text-gray-700 dark:text-gray-100">{review.key_pointers}</span>
+                <div className="mt-4 text-center">
+                  <button onClick={handleGetOptimizeFeedback} disabled={optimizeLoading} className="bg-indigo-500 text-white px-6 py-2 rounded-md hover:bg-indigo-600 disabled:bg-gray-400">
+                    {optimizeLoading ? 'Getting Feedback...' : 'Get Interviewer Feedback'}
+                  </button>
+                </div>
+                {showOptimizeFeedback && (
+                  <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-md">
+                    <h4 className="font-semibold text-lg mb-2">Interviewer Feedback:</h4>
+                    <p className="whitespace-pre-wrap">{optimizeResponse}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'Code' && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-2xl font-bold">Code Implementation</h3>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  >
+                    {languages.map(lang => (
+                      <option key={lang.value} value={lang.value}>{lang.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="border rounded-md overflow-hidden">
+                  <MonacoEditor
+                    height="400px"
+                    language={language}
+                    theme={darkMode ? 'vs-dark' : 'light'}
+                    value={codeInput}
+                    onChange={(value) => setCodeInput(value || '')}
+                    options={{ minimap: { enabled: false } }}
+                  />
+                </div>
+                <div className="mt-6 text-center">
+                  <button onClick={handleCodeReview} className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors">Submit for Final Review</button>
+                </div>
+                {codeReviewError && <p className="text-red-500 text-center mt-4">{codeReviewError}</p>}
+              </div>
+            )}
+
+            {activeTab === 'Review' && review && (
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-3xl font-bold mb-6 text-center">Final Interview Report</h3>
+                <div className="text-center mb-6">
+                  <p className="text-lg">Total Score:</p>
+                  <p className="text-5xl font-bold text-indigo-600 dark:text-indigo-400">{review.total}/10</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <h4 className="font-bold text-xl mb-2">Clarification</h4>
+                    <p className="text-2xl font-semibold mb-2">{review.clarification.grade}/10</p>
+                    <p>{review.clarification.feedback}</p>
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <h4 className="font-bold text-xl mb-2">Brute-force</h4>
+                    <p className="text-2xl font-semibold mb-2">{review.brute_force.grade}/10</p>
+                    <p>{review.brute_force.feedback}</p>
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <h4 className="font-bold text-xl mb-2">Coding</h4>
+                    <p className="text-2xl font-semibold mb-2">{review.coding.grade}/10</p>
+                    <p>{review.coding.feedback}</p>
+                  </div>
+                </div>
+                
+                {/* Line-by-line code feedback */}
+                {review.coding.line_by_line && review.coding.line_by_line.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="font-bold text-xl mb-4">Code Analysis - Line by Line</h4>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                      <div className="mb-4">
+                        <h5 className="font-semibold mb-2">Your Code:</h5>
+                        <pre className="bg-gray-100 dark:bg-gray-800 p-3 rounded text-sm overflow-x-auto">
+                          <code>{codeInput}</code>
+                        </pre>
+                      </div>
+                      <div>
+                        <h5 className="font-semibold mb-2">Issues Found:</h5>
+                        {review.coding.line_by_line.map((item: any, index: number) => (
+                          <div key={index} className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-400 rounded">
+                            <p className="font-semibold text-red-700 dark:text-red-300">
+                              Line {item.line}: {item.issue}
+                            </p>
+                            <p className="text-sm text-red-600 dark:text-red-200 mt-1">
+                              <strong>Suggestion:</strong> {item.suggestion}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                <div>
+                  <h4 className="font-bold text-xl mb-2">Key Pointers for Improvement</h4>
+                  <p className="whitespace-pre-wrap">{review.key_pointers}</p>
+                </div>
+                <div className="mt-8 text-center">
+                  <button onClick={handleRestart} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Try Another Question</button>
                 </div>
               </div>
-              <button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleRestart}>Restart</button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl p-8 mb-8 flex flex-col items-center">
-          <h2 className="text-2xl font-bold text-purple-700 mb-2">Welcome to Leet Coach!</h2>
-          <p className="text-gray-700 text-lg mb-4 text-center">Sign up or log in to start your personalized coding interview simulation and get AI-powered feedback on your solutions.</p>
-          <div className="flex space-x-4">
-            <button
-              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              onClick={() => setShowLogin(true)}
-            >
-              Login
-            </button>
-            <button
-              className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-              onClick={() => setShowSignup(true)}
-            >
-              Sign Up
-            </button>
+            )}
+
           </div>
-        </div>
-      )}
-      <footer className="text-center text-gray-400 text-xs mt-8 mb-2 dark:text-gray-500">&copy; {new Date().getFullYear()} Leet Coach. All rights reserved.</footer>
-      <LoginModal
-        open={showLogin}
-        onClose={() => setShowLogin(false)}
-        onLoginSuccess={handleLoginSuccess}
-      />
-      <SignupModal
-        open={showSignup}
-        onClose={() => setShowSignup(false)}
-        onSignupSuccess={() => setShowSignup(false)}
-      />
+        )}
+
+        <LoginModal open={showLogin} onClose={() => setShowLogin(false)} onLoginSuccess={handleLoginSuccess} />
+        <SignupModal open={showSignup} onClose={() => setShowSignup(false)} onSignupSuccess={() => setShowSignup(false)} />
+      </main>
     </div>
   );
 }

@@ -43,11 +43,11 @@ const SignupModal: React.FC<SignupModalProps> = ({ open, onClose, onSignupSucces
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
-      <div className="bg-white p-6 rounded shadow-md w-full max-w-sm">
-        <h2 className="text-xl font-bold mb-4">Sign Up</h2>
+      <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-full max-w-sm">
+        <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Sign Up</h2>
         <form onSubmit={handleSubmit}>
           <input
-            className="w-full mb-2 p-2 border rounded"
+            className="w-full mb-2 p-2 border rounded text-gray-900 dark:text-white dark:bg-gray-700 dark:border-gray-600"
             type="text"
             placeholder="Username"
             value={username}
@@ -55,7 +55,7 @@ const SignupModal: React.FC<SignupModalProps> = ({ open, onClose, onSignupSucces
             required
           />
           <input
-            className="w-full mb-2 p-2 border rounded"
+            className="w-full mb-2 p-2 border rounded text-gray-900 dark:text-white dark:bg-gray-700 dark:border-gray-600"
             type="email"
             placeholder="Email"
             value={email}
@@ -63,7 +63,7 @@ const SignupModal: React.FC<SignupModalProps> = ({ open, onClose, onSignupSucces
             required
           />
           <input
-            className="w-full mb-2 p-2 border rounded"
+            className="w-full mb-2 p-2 border rounded text-gray-900 dark:text-white dark:bg-gray-700 dark:border-gray-600"
             type="password"
             placeholder="Password"
             value={password}
@@ -75,7 +75,7 @@ const SignupModal: React.FC<SignupModalProps> = ({ open, onClose, onSignupSucces
           <div className="flex justify-end">
             <button
               type="button"
-              className="mr-2 px-4 py-2 bg-gray-200 rounded"
+              className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white rounded"
               onClick={onClose}
               disabled={loading}
             >

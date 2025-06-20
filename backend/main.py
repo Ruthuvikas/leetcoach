@@ -37,6 +37,42 @@ class QuestionAgent:
                     return q
         return QUESTIONS[0]  # Default to first question
 
+class FunctionDefinitionAgent:
+    def __init__(self):
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        openai.api_key = self.api_key
+
+    def generate(self, question, language):
+        q_title = question.get("title", "")
+        q_desc = question.get("description", "")
+        
+        prompt = f"""
+Based on the coding question below, generate a function definition for the language "{language}".
+
+Question Title: {q_title}
+Question Description: {q_desc}
+
+Provide only the function signature or a simple stub. Do not include any explanations, comments, or example usage.
+For example, for "Two Sum" in Python, a good response would be:
+def two_sum(nums, target):
+    pass
+
+For Java:
+class Solution {{
+    public int[] twoSum(int[] nums, int target) {{
+        // Your code here
+    }}
+}}
+"""
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": f"You are a code generator. You output only raw code for the {language} language."},
+                      {"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0.0
+        )
+        return response['choices'][0]['message']['content'].strip()
+
 class ClarificationAgent:
     def __init__(self):
         self.api_key = os.getenv("OPENAI_API_KEY")
@@ -48,24 +84,32 @@ class ClarificationAgent:
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
         q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are an interviewer for a coding interview. Given the user's input and the coding question, provide feedback as an interviewer: do NOT give out the answer, but nudge the user in the right direction with hints, questions, or suggestions. Be specific, constructive, and encourage deeper thinking.
+You are an interviewer for a coding interview. The user is asking clarifying questions about the problem. Your role is to guide them with subtle hints and questions that help them think deeper, but NEVER give away the solution or approach.
 
 Question:
 Title: {q_title}
 Description: {q_desc}
 Examples:
 {q_examples}
-Constraints:
+Constraints (for your reference only, don't mention these to the user):
 {q_constraints}
 
-User input:
+User's clarifying question:
 {user_input}
+
+Respond with:
+1. Acknowledge their question
+2. Ask a follow-up question that nudges them toward the right direction
+3. Suggest what additional information they might want to consider
+4. Keep your response under 100 words
+
+Remember: Don't solve the problem for them. Just guide their thinking.
 """
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions."},
+            messages=[{"role": "system", "content": "You are a helpful but subtle coding interview coach. Never give direct answers or solutions."},
                       {"role": "user", "content": prompt}],
-            max_tokens=200,
+            max_tokens=150,
             temperature=0.3
         )
         return response['choices'][0]['message']['content']
@@ -81,27 +125,35 @@ class BruteForceAgent:
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
         q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are an interviewer for a coding interview. The user is describing a brute-force solution for the following coding question. ONLY consider the brute-force approach and its analysis in your feedback. Do NOT compare to or suggest optimized solutions. If the user provides a time complexity like O(n^2) and it matches the brute-force approach, accept it as correct for this section.
+You are an interviewer evaluating a brute-force solution. The user is describing their initial approach. Provide gentle guidance without revealing the optimal solution.
 
 Question:
 Title: {q_title}
 Description: {q_desc}
 Examples:
 {q_examples}
-Constraints:
+Constraints (for your reference only):
 {q_constraints}
 
-Brute-force idea:
+User's brute-force idea:
 {user_idea}
 Time Complexity: {time_complexity or 'Not provided'}
 Space Complexity: {space_complexity or 'Not provided'}
 
-Give feedback on the idea, and specifically comment on the time and space complexity provided (or lack thereof), but ONLY in the context of a brute-force solution."""
+Provide feedback that:
+1. Acknowledges their approach
+2. Asks questions about edge cases they might have missed
+3. Gently suggests areas they could think about more
+4. Comments on their complexity analysis (if provided)
+5. Keeps response under 120 words
+
+Remember: Don't suggest better algorithms. Just help them think through their current approach.
+"""
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions. Only consider the brute-force approach for this section."},
+            messages=[{"role": "system", "content": "You are a coding interview coach. Guide gently without revealing solutions."},
                       {"role": "user", "content": prompt}],
-            max_tokens=300,
+            max_tokens=200,
             temperature=0.3
         )
         return response['choices'][0]['message']['content']
@@ -117,27 +169,35 @@ class OptimizeAgent:
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
         q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are an interviewer for a coding interview. The user is describing an optimized solution for the following coding question. ONLY consider the optimized approach and its analysis in your feedback. Do NOT compare to or critique the brute-force solution. Focus your feedback on the optimized idea and its time and space complexity.
+You are an interviewer evaluating an optimized solution. The user is describing their improved approach. Provide subtle guidance without revealing the best solution.
 
 Question:
 Title: {q_title}
 Description: {q_desc}
 Examples:
 {q_examples}
-Constraints:
+Constraints (for your reference only):
 {q_constraints}
 
-Optimized idea:
+User's optimized idea:
 {user_idea}
 Time Complexity: {time_complexity or 'Not provided'}
 Space Complexity: {space_complexity or 'Not provided'}
 
-Give feedback on the idea, and specifically comment on the time and space complexity provided (or lack thereof), but ONLY in the context of the optimized solution."""
+Provide feedback that:
+1. Acknowledges their optimization attempt
+2. Asks about trade-offs they considered
+3. Gently questions if there are other approaches they could explore
+4. Comments on their complexity analysis
+5. Keeps response under 120 words
+
+Remember: Don't give away the optimal solution. Just guide their thinking about optimization.
+"""
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions. Only consider the optimized approach for this section."},
+            messages=[{"role": "system", "content": "You are a coding interview coach. Guide optimization thinking without revealing the best approach."},
                       {"role": "user", "content": prompt}],
-            max_tokens=300,
+            max_tokens=200,
             temperature=0.3
         )
         return response['choices'][0]['message']['content']
@@ -147,52 +207,60 @@ class CodeReviewAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def review(self, clarification, brute_force, code, question, bf_time=None, bf_space=None, opt_time=None, opt_space=None):
+    def review(self, clarification, brute_force, code, question, language, bf_time=None, bf_space=None, opt_time=None, opt_space=None):
         q_title = question.get("title", "")
         q_desc = question.get("description", "")
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
         q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are a senior coding interview coach. Review the user's performance for the following coding question:
+You are a senior coding interview coach providing a comprehensive review. Analyze the user's performance and provide detailed, line-by-line code feedback.
 
+Question:
 Title: {q_title}
 Description: {q_desc}
 Examples:
 {q_examples}
-Constraints:
+Constraints (for your reference only):
 {q_constraints}
 
-For each stage, provide a grade (1-10) and detailed feedback, including key pointers for improvement. The stages are:
+Programming Language: {language}
 
-1. Input Clarification: How well did the user clarify the problem and requirements?
-2. Brute-force Idea: How well did the user propose and analyze a brute-force solution? Include feedback on the time and space complexity provided: Time Complexity: {bf_time or 'Not provided'}, Space Complexity: {bf_space or 'Not provided'}
-3. Coding Solution: How correct, efficient, and clear is the final code? Also consider the optimized idea's time and space complexity: Time Complexity: {opt_time or 'Not provided'}, Space Complexity: {opt_space or 'Not provided'}
+User's responses:
+Clarification: {clarification}
+Brute-force idea: {brute_force}
+Code solution: {code}
+Brute-force complexity: Time={bf_time}, Space={bf_space}
+Optimized complexity: Time={opt_time}, Space={opt_space}
 
-After grading each stage, also provide a total score out of 10 for the user's overall performance (not an average, but your holistic judgment).
+Provide a detailed review with:
+
+1. Overall grades (1-10) for each section
+2. Line-by-line code analysis pointing out specific issues, considering {language} best practices
+3. Language-specific suggestions for improvement
+4. Total score out of 10
 
 Return a JSON object with this structure:
 {{
   "clarification": {{"grade": int, "feedback": str}},
   "brute_force": {{"grade": int, "feedback": str}},
-  "coding": {{"grade": int, "feedback": str}},
-  "total": int,  // total score out of 10
+  "coding": {{
+    "grade": int, 
+    "feedback": str,
+    "line_by_line": [
+      {{"line": int, "issue": str, "suggestion": str}}
+    ]
+  }},
+  "total": int,
   "key_pointers": str
 }}
 
-User's input clarification:
-{clarification}
-
-User's brute-force idea:
-{brute_force}
-
-User's code solution:
-{code}
+For the line-by-line analysis, identify specific lines with issues and provide concrete suggestions for each, considering {language} syntax, conventions, and best practices.
 """
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a senior coding interview coach."},
+            messages=[{"role": "system", "content": f"You are a senior coding interview coach providing detailed, constructive feedback for {language} code."},
                       {"role": "user", "content": prompt}],
-            max_tokens=600,
+            max_tokens=800,
             temperature=0.3
         )
         import re, json as pyjson
@@ -249,6 +317,25 @@ async def start_session(request: Request):
     question = QuestionAgent().get_question(question_id)
     return {"question": question}
 
+question_agent = QuestionAgent()
+function_definition_agent = FunctionDefinitionAgent()
+
+@app.post("/api/function-definition")
+async def get_function_definition(request: Request):
+    data = await request.json()
+    question_id = data.get("question_id")
+    language = data.get("language")
+
+    if not question_id or not language:
+        raise HTTPException(status_code=400, detail="question_id and language are required")
+
+    question = question_agent.get_question(question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    function_definition = function_definition_agent.generate(question, language)
+    return {"function_definition": function_definition}
+
 @app.post("/api/clarify")
 async def clarify(request: Request):
     data = await request.json()
@@ -293,6 +380,7 @@ async def code_review(request: Request):
         data.get("brute_force", ""),
         data.get("code", ""),
         question,
+        data.get("language"),
         data.get("brute_force_time_complexity"),
         data.get("brute_force_space_complexity"),
         data.get("optimize_time_complexity"),

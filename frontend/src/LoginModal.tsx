@@ -37,11 +37,11 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose, onLoginSuccess }
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
-      <div className="bg-white p-6 rounded shadow-md w-full max-w-sm">
-        <h2 className="text-xl font-bold mb-4">Login</h2>
+      <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-full max-w-sm">
+        <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Login</h2>
         <form onSubmit={handleSubmit}>
           <input
-            className="w-full mb-2 p-2 border rounded"
+            className="w-full mb-2 p-2 border rounded text-gray-900 dark:text-white dark:bg-gray-700 dark:border-gray-600"
             type="text"
             placeholder="Username"
             value={username}
@@ -49,7 +49,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose, onLoginSuccess }
             required
           />
           <input
-            className="w-full mb-2 p-2 border rounded"
+            className="w-full mb-2 p-2 border rounded text-gray-900 dark:text-white dark:bg-gray-700 dark:border-gray-600"
             type="password"
             placeholder="Password"
             value={password}
@@ -60,7 +60,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose, onLoginSuccess }
           <div className="flex justify-end">
             <button
               type="button"
-              className="mr-2 px-4 py-2 bg-gray-200 rounded"
+              className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white rounded"
               onClick={onClose}
               disabled={loading}
             >
