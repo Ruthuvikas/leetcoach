@@ -23,6 +23,8 @@ const steps = [
 function App() {
   const [step, setStep] = useState(0);
   const [question, setQuestion] = useState<Question | null>(null);
+  const [questions, setQuestions] = useState<{ id: number; title: string }[]>([]);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
   const [clarifyInput, setClarifyInput] = useState('');
   const [clarifyResponse, setClarifyResponse] = useState('');
   const [bruteForceInput, setBruteForceInput] = useState('');
@@ -48,14 +50,34 @@ function App() {
   const clarifyTimeout = useRef<NodeJS.Timeout | null>(null);
   const bruteForceTimeout = useRef<NodeJS.Timeout | null>(null);
   const optimizeTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [bruteForceTime, setBruteForceTime] = useState('');
+  const [bruteForceSpace, setBruteForceSpace] = useState('');
+  const [optimizeTime, setOptimizeTime] = useState('');
+  const [optimizeSpace, setOptimizeSpace] = useState('');
+  const [timer, setTimer] = useState(45 * 60); // 45 minutes in seconds
+  const [timerActive, setTimerActive] = useState(false);
+  const [timeout, setTimeoutReached] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const nextStep = () => setStep((s) => s + 1);
 
   React.useEffect(() => {
-    fetch('/api/start-session', { method: 'POST' })
-      .then((res) => res.json())
-      .then((data) => setQuestion(data.question));
+    fetch('/api/questions')
+      .then(res => res.json())
+      .then(data => setQuestions(data));
   }, []);
+
+  React.useEffect(() => {
+    if (selectedQuestionId !== null) {
+      fetch('/api/start-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: selectedQuestionId })
+      })
+        .then((res) => res.json())
+        .then((data) => setQuestion(data.question));
+    }
+  }, [selectedQuestionId]);
 
   React.useEffect(() => {
     if (darkMode) {
@@ -80,20 +102,20 @@ function App() {
       fetch('/api/clarify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_input: clarifyInput }),
+        body: JSON.stringify({ user_input: clarifyInput, question_id: selectedQuestionId }),
       })
         .then(res => res.json())
         .then(data => setClarifyResponse(data.response))
         .finally(() => setClarifyLoading(false));
     }, 600);
     // eslint-disable-next-line
-  }, [clarifyInput, step]);
+  }, [clarifyInput, step, selectedQuestionId]);
 
   // Live feedback for brute-force
   React.useEffect(() => {
     if (step !== 2) return;
     if (bruteForceTimeout.current) clearTimeout(bruteForceTimeout.current);
-    if (!bruteForceInput.trim()) {
+    if (!bruteForceInput.trim() && !bruteForceTime.trim() && !bruteForceSpace.trim()) {
       setBruteForceResponse('');
       return;
     }
@@ -102,20 +124,20 @@ function App() {
       fetch('/api/brute-force', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_idea: bruteForceInput }),
+        body: JSON.stringify({ user_idea: bruteForceInput, time_complexity: bruteForceTime, space_complexity: bruteForceSpace, question_id: selectedQuestionId }),
       })
         .then(res => res.json())
         .then(data => setBruteForceResponse(data.response))
         .finally(() => setBruteForceLoading(false));
     }, 600);
     // eslint-disable-next-line
-  }, [bruteForceInput, step]);
+  }, [bruteForceInput, bruteForceTime, bruteForceSpace, step, selectedQuestionId]);
 
   // Live feedback for optimize
   React.useEffect(() => {
     if (step !== 3) return;
     if (optimizeTimeout.current) clearTimeout(optimizeTimeout.current);
-    if (!optimizeInput.trim()) {
+    if (!optimizeInput.trim() && !optimizeTime.trim() && !optimizeSpace.trim()) {
       setOptimizeResponse('');
       return;
     }
@@ -124,20 +146,53 @@ function App() {
       fetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_idea: optimizeInput }),
+        body: JSON.stringify({ user_idea: optimizeInput, time_complexity: optimizeTime, space_complexity: optimizeSpace, question_id: selectedQuestionId }),
       })
         .then(res => res.json())
         .then(data => setOptimizeResponse(data.response))
         .finally(() => setOptimizeLoading(false));
     }, 600);
     // eslint-disable-next-line
-  }, [optimizeInput, step]);
+  }, [optimizeInput, optimizeTime, optimizeSpace, step, selectedQuestionId]);
+
+  // Timer effect
+  React.useEffect(() => {
+    if (!timerActive || timeout) return;
+    if (timer <= 0) {
+      setTimeoutReached(true);
+      setTimerActive(false);
+      return;
+    }
+    timerRef.current = setTimeout(() => setTimer(t => t - 1), 1000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [timer, timerActive, timeout]);
+
+  // Reset timer on restart
+  React.useEffect(() => {
+    if (step === 0) {
+      setTimer(45 * 60);
+      setTimerActive(false);
+      setTimeoutReached(false);
+    }
+  }, [step]);
+
+  // Format timer
+  const formatTimer = (t: number) => {
+    const m = Math.floor(t / 60).toString().padStart(2, '0');
+    const s = (t % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const handleStartInterview = () => {
+    setStep(1);
+    setTimerActive(true);
+  };
 
   const handleClarify = async () => {
     const res = await fetch('/api/clarify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_input: clarifyInput }),
+      body: JSON.stringify({ user_input: clarifyInput, question_id: selectedQuestionId }),
     });
     const data = await res.json();
     setClarifyResponse(data.response);
@@ -148,7 +203,7 @@ function App() {
     const res = await fetch('/api/brute-force', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_idea: bruteForceInput }),
+      body: JSON.stringify({ user_idea: bruteForceInput, time_complexity: bruteForceTime, space_complexity: bruteForceSpace, question_id: selectedQuestionId }),
     });
     const data = await res.json();
     setBruteForceResponse(data.response);
@@ -159,7 +214,7 @@ function App() {
     const res = await fetch('/api/optimize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_idea: optimizeInput }),
+      body: JSON.stringify({ user_idea: optimizeInput, time_complexity: optimizeTime, space_complexity: optimizeSpace, question_id: selectedQuestionId }),
     });
     const data = await res.json();
     setOptimizeResponse(data.response);
@@ -179,6 +234,11 @@ function App() {
         clarification: clarifyInput,
         brute_force: bruteForceInput,
         code: codeInput,
+        brute_force_time_complexity: bruteForceTime,
+        brute_force_space_complexity: bruteForceSpace,
+        optimize_time_complexity: optimizeTime,
+        optimize_space_complexity: optimizeSpace,
+        question_id: selectedQuestionId
       }),
     });
     const data = await res.json();
@@ -206,9 +266,8 @@ function App() {
     setOptimizeResponse('');
     setCodeInput('');
     setReview(null);
-    fetch('/api/start-session', { method: 'POST' })
-      .then((res) => res.json())
-      .then((data) => setQuestion(data.question));
+    setSelectedQuestionId(null);
+    setQuestion(null);
   };
 
   return (
@@ -249,8 +308,28 @@ function App() {
           )}
         </div>
       </header>
+      {/* Timer below header, above main content, with Exit button next to it */}
+      {step > 0 && step < 5 && timerActive && !timeout && (
+        <div className="w-full flex justify-center mb-4 items-center gap-4">
+          <div className="bg-gray-900 text-white dark:bg-gray-800 dark:text-gray-100 px-6 py-2 rounded-full shadow text-lg font-mono border-2 border-purple-400">
+            Time Left: {formatTimer(timer)}
+          </div>
+          <button
+            className="px-5 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded-full shadow border border-yellow-600 transition-all"
+            onClick={handleRestart}
+            aria-label="Exit to question selection"
+          >
+            Exit
+          </button>
+        </div>
+      )}
+      {timeout && (
+        <div className="w-full flex justify-center mb-4">
+          <div className="bg-red-700 text-white px-6 py-2 rounded-full shadow text-lg font-bold border-2 border-red-400">Time's up! Please restart to try again.</div>
+        </div>
+      )}
       {isLoggedIn ? (
-        <div className={"w-full max-w-2xl rounded-2xl shadow-xl p-8 mb-8 " + (darkMode ? 'bg-gray-900 text-gray-100' : 'bg-white') + " dark:bg-gray-900 dark:text-gray-100"}>
+        <div className={"w-full max-w-2xl rounded-2xl shadow-xl p-8 mb-8 relative flex flex-col min-h-[700px] " + (darkMode ? 'bg-gray-900 text-gray-100' : 'bg-white') + " dark:bg-gray-900 dark:text-gray-100"}>
           <nav className="flex justify-between mb-6">
             {steps.map((s, i) => (
               <div
@@ -267,52 +346,79 @@ function App() {
               }</div>
             ))}
           </nav>
-          {step === 0 && question && (
+          {step === 0 && (
             <div>
-              <h2 className="text-2xl font-bold mb-2 text-purple-700">{question.title}</h2>
-              <p className="mb-4 text-gray-700 text-lg">{question.description}</p>
+              <h2 className="text-2xl font-bold mb-2 text-purple-700 dark:text-purple-300">Choose a Question</h2>
               <div className="mb-4">
-                <strong className="text-gray-800">Examples:</strong>
-                {question.examples.map((ex, i) => (
-                  <div key={i} className="ml-4 text-sm text-gray-600">Input: {ex.input} <span className="text-gray-400">→</span> Output: {ex.output}</div>
-                ))}
-              </div>
-              <div className="mb-4">
-                <strong className="text-gray-800">Constraints:</strong>
-                <ul className="list-disc ml-6 text-sm text-gray-600">
-                  {question.constraints.map((c, i) => (
-                    <li key={i}>{c}</li>
+                <select
+                  className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700"
+                  value={selectedQuestionId ?? ''}
+                  onChange={e => setSelectedQuestionId(Number(e.target.value))}
+                >
+                  <option value="" disabled>Select a question...</option>
+                  {questions.map(q => (
+                    <option key={q.id} value={q.id}>{q.title}</option>
                   ))}
-                </ul>
+                </select>
               </div>
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={nextStep}>Start Interview</button>
+              {question && selectedQuestionId && (
+                <>
+                  <p className="mb-4 text-gray-700 dark:text-gray-100 text-lg">{question.description}</p>
+                  <div className="mb-4">
+                    <span className="block text-md text-blue-700 dark:text-blue-300 font-semibold mb-2">You will have 45 minutes to complete the interview once you start.</span>
+                  </div>
+                  <div className="mb-4">
+                    <strong className="text-gray-800 dark:text-gray-200">Examples:</strong>
+                    {question.examples.map((ex, i) => (
+                      <div key={i} className="ml-4 text-sm text-gray-600 dark:text-gray-300">Input: {ex.input} <span className="text-gray-400 dark:text-gray-400">→</span> Output: {ex.output}</div>
+                    ))}
+                  </div>
+                  <div className="mb-4">
+                    <strong className="text-gray-800 dark:text-gray-200">Constraints:</strong>
+                    <ul className="list-disc ml-6 text-sm text-gray-600 dark:text-gray-300">
+                      {question.constraints.map((c, i) => (
+                        <li key={i}>{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleStartInterview} disabled={!selectedQuestionId}>Start Interview</button>
+                </>
+              )}
             </div>
           )}
           {step === 1 && (
             <div>
               <h2 className="font-semibold text-lg text-purple-700 mb-2">Step 1: Ask clarifying questions</h2>
-              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={clarifyInput} onChange={e => setClarifyInput(e.target.value)} placeholder="Ask about input, constraints, etc." />
+              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={clarifyInput} onChange={e => setClarifyInput(e.target.value)} placeholder="Ask about input, constraints, etc." disabled={timeout} />
               {clarifyLoading && <div className="text-xs text-gray-400">Loading feedback...</div>}
               {clarifyResponse && <div className="mt-4 p-3 bg-purple-50 dark:bg-gray-800 border-l-4 border-purple-400 text-purple-900 dark:text-purple-200 rounded">Interviewer: {clarifyResponse}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleClarify}>Next</button>
+              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleClarify} disabled={timeout}>Next</button>
             </div>
           )}
           {step === 2 && (
             <div>
               <h2 className="font-semibold text-lg text-purple-700 mb-2">Step 2: Explain brute-force solution</h2>
-              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceInput} onChange={e => setBruteForceInput(e.target.value)} placeholder="Describe your brute-force approach..." />
+              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceInput} onChange={e => setBruteForceInput(e.target.value)} placeholder="Describe your brute-force approach..." disabled={timeout} />
+              <div className="flex gap-4 mb-2">
+                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceTime} onChange={e => setBruteForceTime(e.target.value)} placeholder="Time Complexity (e.g. O(n^2))" disabled={timeout} />
+                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={bruteForceSpace} onChange={e => setBruteForceSpace(e.target.value)} placeholder="Space Complexity (e.g. O(n))" disabled={timeout} />
+              </div>
               {bruteForceLoading && <div className="text-xs text-gray-400">Loading feedback...</div>}
               {bruteForceResponse && <div className="mt-4 p-3 bg-purple-50 dark:bg-gray-800 border-l-4 border-purple-400 text-purple-900 dark:text-purple-200 rounded">Interviewer: {bruteForceResponse}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleBruteForce}>Next</button>
+              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleBruteForce} disabled={timeout}>Next</button>
             </div>
           )}
           {step === 3 && (
             <div>
               <h2 className="font-semibold text-lg text-purple-700 mb-2">Step 3: Explain optimized solution</h2>
-              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeInput} onChange={e => setOptimizeInput(e.target.value)} placeholder="Describe your optimized approach..." />
+              <textarea className="w-full border-2 border-purple-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400 transition mb-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeInput} onChange={e => setOptimizeInput(e.target.value)} placeholder="Describe your optimized approach..." disabled={timeout} />
+              <div className="flex gap-4 mb-2">
+                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeTime} onChange={e => setOptimizeTime(e.target.value)} placeholder="Time Complexity (e.g. O(n log n))" disabled={timeout} />
+                <input className="flex-1 border-2 border-purple-200 rounded-lg p-2 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700" value={optimizeSpace} onChange={e => setOptimizeSpace(e.target.value)} placeholder="Space Complexity (e.g. O(1))" disabled={timeout} />
+              </div>
               {optimizeLoading && <div className="text-xs text-gray-400">Loading feedback...</div>}
               {optimizeResponse && <div className="mt-4 p-3 bg-purple-50 dark:bg-gray-800 border-l-4 border-purple-400 text-purple-900 dark:text-purple-200 rounded">Interviewer: {optimizeResponse}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleOptimize}>Next</button>
+              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all mt-2" onClick={handleOptimize} disabled={timeout}>Next</button>
             </div>
           )}
           {step === 4 && (
@@ -325,17 +431,17 @@ function App() {
                   theme={darkMode ? 'vs-dark' : 'vs-light'}
                   value={codeInput}
                   onChange={(value: string | undefined) => setCodeInput(value || '')}
-                  options={{ fontSize: 14, minimap: { enabled: false } }}
+                  options={{ fontSize: 14, minimap: { enabled: false }, readOnly: timeout }}
                 />
               </div>
               {codeReviewError && <div className="text-red-500 text-sm mb-2">{codeReviewError}</div>}
-              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleCodeReview} disabled={!clarifyInput.trim() && !bruteForceInput.trim() && !codeInput.trim()}>Submit for Review</button>
+              <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleCodeReview} disabled={timeout || (!clarifyInput.trim() && !bruteForceInput.trim() && !codeInput.trim())}>Submit for Review</button>
             </div>
           )}
           {step === 5 && review && (
             <div>
-              <h2 className="font-semibold text-lg text-purple-700 mb-4">Step 5: Code Review</h2>
-              <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl mb-4 shadow">
+              <h2 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-4">Step 5: Code Review</h2>
+              <div className="p-4 bg-purple-50 dark:bg-gray-800 border-2 border-purple-200 dark:border-purple-700 rounded-xl mb-4 shadow">
                 {typeof review.total === 'number' && (
                   <div className="mb-4 text-xl font-bold text-purple-800 dark:text-purple-200">
                     Total Score: <span className="font-mono">{review.total}/10</span>
@@ -343,22 +449,22 @@ function App() {
                   </div>
                 )}
                 <div className="mb-4">
-                  <strong className="text-purple-700">Input Clarification:</strong> <span className="font-mono">{review.clarification?.grade}/10</span>
+                  <strong className="text-purple-700 dark:text-purple-300">Input Clarification:</strong> <span className="font-mono">{review.clarification?.grade}/10</span>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">How well you clarified the problem and requirements.</div>
-                  <span className="text-sm text-gray-700">{review.clarification?.feedback}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-100">{review.clarification?.feedback}</span>
                 </div>
                 <div className="mb-4">
-                  <strong className="text-purple-700">Brute-force Idea:</strong> <span className="font-mono">{review.brute_force?.grade}/10</span>
+                  <strong className="text-purple-700 dark:text-purple-300">Brute-force Idea:</strong> <span className="font-mono">{review.brute_force?.grade}/10</span>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">How well you proposed and analyzed a brute-force solution.</div>
-                  <span className="text-sm text-gray-700">{review.brute_force?.feedback}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-100">{review.brute_force?.feedback}</span>
                 </div>
                 <div className="mb-4">
-                  <strong className="text-purple-700">Coding Solution:</strong> <span className="font-mono">{review.coding?.grade}/10</span>
+                  <strong className="text-purple-700 dark:text-purple-300">Coding Solution:</strong> <span className="font-mono">{review.coding?.grade}/10</span>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">How correct, efficient, and clear your final code was.</div>
-                  <span className="text-sm text-gray-700">{review.coding?.feedback}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-100">{review.coding?.feedback}</span>
                 </div>
                 <div className="mb-2">
-                  <strong className="text-purple-700">Key Pointers:</strong> <span className="text-sm text-gray-700">{review.key_pointers}</span>
+                  <strong className="text-purple-700 dark:text-purple-300">Key Pointers:</strong> <span className="text-sm text-gray-700 dark:text-gray-100">{review.key_pointers}</span>
                 </div>
               </div>
               <button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-2 px-6 rounded-full shadow transition-all" onClick={handleRestart}>Restart</button>

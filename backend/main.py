@@ -30,8 +30,12 @@ with open("../questions.json") as f:
 
 # Agent stubs
 class QuestionAgent:
-    def get_question(self):
-        return QUESTIONS[0]  # For demo, always return first question
+    def get_question(self, question_id=None):
+        if question_id is not None:
+            for q in QUESTIONS:
+                if q["id"] == question_id:
+                    return q
+        return QUESTIONS[0]  # Default to first question
 
 class ClarificationAgent:
     def __init__(self):
@@ -71,13 +75,13 @@ class BruteForceAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def feedback(self, user_idea, question):
+    def feedback(self, user_idea, question, time_complexity=None, space_complexity=None):
         q_title = question.get("title", "")
         q_desc = question.get("description", "")
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
         q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are an interviewer for a coding interview. Given the user's brute-force idea for solving the following coding question, provide feedback as an interviewer: do NOT give out the answer, but nudge the user in the right direction with hints, questions, or suggestions. Be specific, constructive, and encourage deeper thinking.
+You are an interviewer for a coding interview. The user is describing a brute-force solution for the following coding question. ONLY consider the brute-force approach and its analysis in your feedback. Do NOT compare to or suggest optimized solutions. If the user provides a time complexity like O(n^2) and it matches the brute-force approach, accept it as correct for this section.
 
 Question:
 Title: {q_title}
@@ -89,12 +93,15 @@ Constraints:
 
 Brute-force idea:
 {user_idea}
-"""
+Time Complexity: {time_complexity or 'Not provided'}
+Space Complexity: {space_complexity or 'Not provided'}
+
+Give feedback on the idea, and specifically comment on the time and space complexity provided (or lack thereof), but ONLY in the context of a brute-force solution."""
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions."},
+            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions. Only consider the brute-force approach for this section."},
                       {"role": "user", "content": prompt}],
-            max_tokens=250,
+            max_tokens=300,
             temperature=0.3
         )
         return response['choices'][0]['message']['content']
@@ -104,13 +111,13 @@ class OptimizeAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def feedback(self, user_idea, question):
+    def feedback(self, user_idea, question, time_complexity=None, space_complexity=None):
         q_title = question.get("title", "")
         q_desc = question.get("description", "")
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
         q_constraints = "\n".join(question.get("constraints", []))
         prompt = f"""
-You are an interviewer for a coding interview. Given the user's optimized idea for solving the following coding question, provide feedback as an interviewer: do NOT give out the answer, but nudge the user in the right direction with hints, questions, or suggestions. Be specific, constructive, and encourage deeper thinking.
+You are an interviewer for a coding interview. The user is describing an optimized solution for the following coding question. ONLY consider the optimized approach and its analysis in your feedback. Do NOT compare to or critique the brute-force solution. Focus your feedback on the optimized idea and its time and space complexity.
 
 Question:
 Title: {q_title}
@@ -122,12 +129,15 @@ Constraints:
 
 Optimized idea:
 {user_idea}
-"""
+Time Complexity: {time_complexity or 'Not provided'}
+Space Complexity: {space_complexity or 'Not provided'}
+
+Give feedback on the idea, and specifically comment on the time and space complexity provided (or lack thereof), but ONLY in the context of the optimized solution."""
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions."},
+            messages=[{"role": "system", "content": "You are an interviewer for a coding interview. Never give out the answer directly. Nudge the user with hints, questions, or suggestions. Only consider the optimized approach for this section."},
                       {"role": "user", "content": prompt}],
-            max_tokens=250,
+            max_tokens=300,
             temperature=0.3
         )
         return response['choices'][0]['message']['content']
@@ -137,7 +147,7 @@ class CodeReviewAgent:
         self.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_key = self.api_key
 
-    def review(self, clarification, brute_force, code, question):
+    def review(self, clarification, brute_force, code, question, bf_time=None, bf_space=None, opt_time=None, opt_space=None):
         q_title = question.get("title", "")
         q_desc = question.get("description", "")
         q_examples = "\n".join([f"Input: {ex['input']} | Output: {ex['output']}" for ex in question.get("examples", [])])
@@ -155,8 +165,8 @@ Constraints:
 For each stage, provide a grade (1-10) and detailed feedback, including key pointers for improvement. The stages are:
 
 1. Input Clarification: How well did the user clarify the problem and requirements?
-2. Brute-force Idea: How well did the user propose and analyze a brute-force solution?
-3. Coding Solution: How correct, efficient, and clear is the final code?
+2. Brute-force Idea: How well did the user propose and analyze a brute-force solution? Include feedback on the time and space complexity provided: Time Complexity: {bf_time or 'Not provided'}, Space Complexity: {bf_space or 'Not provided'}
+3. Coding Solution: How correct, efficient, and clear is the final code? Also consider the optimized idea's time and space complexity: Time Complexity: {opt_time or 'Not provided'}, Space Complexity: {opt_space or 'Not provided'}
 
 After grading each stage, also provide a total score out of 10 for the user's overall performance (not an average, but your holistic judgment).
 
@@ -228,43 +238,65 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# Simulate agent flow for demo
+@app.get("/api/questions")
+async def get_questions():
+    return [{"id": q["id"], "title": q["title"]} for q in QUESTIONS]
+
 @app.post("/api/start-session")
 async def start_session(request: Request):
-    question = QuestionAgent().get_question()
+    data = await request.json()
+    question_id = data.get("question_id")
+    question = QuestionAgent().get_question(question_id)
     return {"question": question}
 
 @app.post("/api/clarify")
 async def clarify(request: Request):
     data = await request.json()
-    question = QUESTIONS[0]
+    question_id = data.get("question_id")
+    question = QuestionAgent().get_question(question_id)
     response = ClarificationAgent().respond(data.get("user_input", ""), question)
     return {"agent": "ClarificationAgent", "response": response}
 
 @app.post("/api/brute-force")
 async def brute_force(request: Request):
     data = await request.json()
-    question = QUESTIONS[0]
-    response = BruteForceAgent().feedback(data.get("user_idea", ""), question)
+    question_id = data.get("question_id")
+    question = QuestionAgent().get_question(question_id)
+    response = BruteForceAgent().feedback(
+        data.get("user_idea", ""),
+        question,
+        data.get("time_complexity"),
+        data.get("space_complexity")
+    )
     return {"agent": "BruteForceAgent", "response": response}
 
 @app.post("/api/optimize")
 async def optimize(request: Request):
     data = await request.json()
-    question = QUESTIONS[0]
-    response = OptimizeAgent().feedback(data.get("user_idea", ""), question)
+    question_id = data.get("question_id")
+    question = QuestionAgent().get_question(question_id)
+    response = OptimizeAgent().feedback(
+        data.get("user_idea", ""),
+        question,
+        data.get("time_complexity"),
+        data.get("space_complexity")
+    )
     return {"agent": "OptimizeAgent", "response": response}
 
 @app.post("/api/code-review")
 async def code_review(request: Request):
     data = await request.json()
-    # For now, always use the first question
-    question = QUESTIONS[0]
+    question_id = data.get("question_id")
+    question = QuestionAgent().get_question(question_id)
     review = CodeReviewAgent().review(
         data.get("clarification", ""),
         data.get("brute_force", ""),
         data.get("code", ""),
-        question
+        question,
+        data.get("brute_force_time_complexity"),
+        data.get("brute_force_space_complexity"),
+        data.get("optimize_time_complexity"),
+        data.get("optimize_space_complexity")
     )
     return {"agent": "CodeReviewAgent", "review": review}
 
