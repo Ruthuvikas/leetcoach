@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+// Add this line to get the API base URL from environment variables
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+
 interface LoginModalProps {
   open: boolean;
   onClose: () => void;
@@ -19,7 +22,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose, onLoginSuccess }
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/login', {
+      // Use the API_BASE_URL for the login endpoint
+      const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
