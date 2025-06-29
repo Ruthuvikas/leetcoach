@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+// Add this line to get the API base URL from environment variables
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+
 interface SignupModalProps {
   open: boolean;
   onClose: () => void;
@@ -22,7 +25,8 @@ const SignupModal: React.FC<SignupModalProps> = ({ open, onClose, onSignupSucces
     setError('');
     setSuccess(false);
     try {
-      const res = await fetch('/api/register', {
+      // Use the API_BASE_URL for the register endpoint
+      const res = await fetch(`${API_BASE_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password })
