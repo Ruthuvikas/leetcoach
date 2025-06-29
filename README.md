@@ -9,7 +9,7 @@ LeetCoach is a fullstack application that simulates LeetCode-style technical int
 - **LLM:** OpenAI or local model via LangGraph
 
 ## Workflow
-1. User is shown a random LeetCode-style question.
+1. User is shown a random LeetCode-style Question.
 2. User asks clarifying questions.
 3. ClarificationAgent responds as interviewer.
 4. User explains brute-force solution.
