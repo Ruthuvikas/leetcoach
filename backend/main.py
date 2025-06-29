@@ -49,7 +49,9 @@ setup_middleware(app)
 
 # Load questions from questions.json
 try:
-    with open("../questions.json") as f:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    QUESTIONS_PATH = os.path.join(BASE_DIR, "questions.json")
+    with open(QUESTIONS_PATH) as f:
         QUESTIONS = json.load(f)
     logger.info(f"Loaded {len(QUESTIONS)} questions")
 except Exception as e:
