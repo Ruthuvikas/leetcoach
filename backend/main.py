@@ -108,6 +108,15 @@ async def health_check():
         "version": "1.0.0"
     }
 
+# CORS preflight handlers
+@app.options("/api/login")
+async def login_options():
+    return {"message": "OK"}
+
+@app.options("/api/register")
+async def register_options():
+    return {"message": "OK"}
+
 # Agent classes with improved error handling
 class QuestionAgent:
     def get_question(self, question_id=None):

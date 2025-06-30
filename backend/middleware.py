@@ -119,7 +119,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 def setup_middleware(app):
     """Setup all middleware for the FastAPI app"""
     
-    # CORS middleware
+    # Debug: Log CORS settings
+    logger.info(f"CORS allowed_origins: {settings.allowed_origins}")
+    
+    # CORS middleware - MUST be first
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins,
@@ -135,7 +138,7 @@ def setup_middleware(app):
             allowed_hosts=["*"]  # Configure with your domain in production
         )
     
-    # Custom middleware
+    # Custom middleware - add after CORS
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(LoggingMiddleware)
     app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute) 
