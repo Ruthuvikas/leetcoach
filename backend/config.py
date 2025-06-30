@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # CORS
-    allowed_origins: List[str] = ["http://localhost:3000"]
+    allowed_origins: List[str] = ["http://localhost:3000", "https://leetcoach.vercel.app"]
     
     # Rate Limiting
     rate_limit_per_minute: int = 60
